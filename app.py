@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 from langchain.llms import OpenAI
 from crewai import Agent, Task, Crew
@@ -169,4 +168,3 @@ if st.session_state.results["feedback"]:
     st.write("**Feedback for Improvement**")
     for item in st.session_state.results["feedback"]:
         st.write(f"- {item}")
-```
