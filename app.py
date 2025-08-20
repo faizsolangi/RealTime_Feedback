@@ -6,6 +6,7 @@ import requests
 import os
 import time
 import threading
+import pandas as pd
 
 # Set up Streamlit page
 st.title("Real-Time HubSpot Call Analysis Dashboard")
@@ -17,16 +18,6 @@ llm = OpenAI(model="gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"))
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 HUBSPOT_API_KEY = os.getenv("HUBSPOT_API_KEY")
 CONTACT_ID = os.getenv("HUBSPOT_CONTACT_ID", "CONTACT_ID")  # Replace with Faiz Ahmad's contact ID
-
-# Sample transcript chunks for simulation
-transcript_chunks = [
-    "Agent: Hello, this is a test discovery call from Test Corp. We provide customized marketing solutions to enhance your business growth. Can you share your current marketing challenges?",
-    "Prospect: We’re struggling with lead generation and need better ROI on our campaigns.",
-    "Agent: That’s a common challenge. Our solutions can optimize your campaigns using data-driven strategies. Can you describe your target audience?",
-    "Prospect: Mostly small businesses. I’d like to know more about your pricing and implementation process.",
-    "Agent: Let’s schedule a follow-up to discuss pricing and tailor a plan. Does next week work?",
-    "Prospect: Yes, let’s do Tuesday."
-]
 
 # Session state
 if "transcript" not in st.session_state:
@@ -93,49 +84,51 @@ def log_to_hubspot(transcript, results):
         st.error(f"HubSpot logging error: {str(e)}")
         return False
 
-# Simulate real-time transcript
-def simulate_real_time():
-    st.session_state.transcript = ""
-    st.session_state.results = {"sentiment": {}, "key_phrases": [], "feedback": []}
-    for chunk in transcript_chunks:
-        if not st.session_state.running:
-            break
-        start_time = time.time()
-        st.session_state.transcript += chunk + "\n"
-        sentiment, feedback = analyze_chunk(chunk)
-        st.session_state.results["sentiment"] = sentiment
-        st.session_state.results["key_phrases"].extend(feedback.get("key_phrases", []))
-        st.session_state.results["feedback"].extend(feedback.get("feedback", []))
-        st.rerun()
-        elapsed = time.time() - start_time
-        time.sleep(max(0, 3 - elapsed))  # Ensure 3-second delay
-    st.session_state.running = False
-
-# Real-time transcription with AssemblyAI (uncomment for production)
-"""
+# Real-time transcription with AssemblyAI
 def transcribe_real_time():
     transcriber = aai.RealtimeTranscriber(
         on_data=lambda data: (
-            setattr(st.session_state, "transcript", st.session_state.transcript + data.text + "\n"),
-            st.session_state.results.update(analyze_chunk(data.text)[1]),
+            setattr(st.session_state, "transcript", st.session_state.transcript + data.text + " "),
+            st.session_state.results.update(analyze_chunk(data.text)),
             st.rerun()
         ),
         on_error=lambda error: st.error(f"Transcription error: {error}")
     )
     transcriber.connect()
-    time.sleep(10)  # Replace with HubSpot call audio stream
+    # Simulate HubSpot call audio (replace with SDK stream)
+    try:
+        transcriber.stream_file("sample_call.wav")  # Replace with HubSpot SDK audio stream
+    except FileNotFoundError:
+        st.warning("Audio file not found. Simulating with sample transcript...")
+        for chunk in [
+            "Agent: Hello, this is a test discovery call from Test Corp. We provide customized marketing solutions to enhance your business growth. Can you share your current marketing challenges?",
+            "Prospect: We’re struggling with lead generation and need better ROI on our campaigns.",
+            "Agent: That’s a common challenge. Our solutions can optimize your campaigns using data-driven strategies. Can you describe your target audience?",
+            "Prospect: Mostly small businesses. I’d like to know more about your pricing and implementation process.",
+            "Agent: Let’s schedule a follow-up to discuss pricing and tailor a plan. Does next week work?",
+            "Prospect: Yes, let’s do Tuesday."
+        ]:
+            if not st.session_state.running:
+                break
+            st.session_state.transcript += chunk + "\n"
+            sentiment, feedback = analyze_chunk(chunk)
+            st.session_state.results["sentiment"] = sentiment
+            st.session_state.results["key_phrases"].extend(feedback.get("key_phrases", []))
+            st.session_state.results["feedback"].extend(feedback.get("feedback", []))
+            st.rerun()
+            time.sleep(3)
     transcriber.close()
     st.session_state.running = False
-"""
 
 # UI controls
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Start Real-Time Analysis"):
+    if st.button("Start Real-Time Transcription and Analysis"):
         if not st.session_state.running:
             st.session_state.running = True
-            threading.Thread(target=simulate_real_time, daemon=True).start()
-            # threading.Thread(target=transcribe_real_time, daemon=True).start()  # Uncomment for AssemblyAI
+            st.session_state.transcript = ""
+            st.session_state.results = {"sentiment": {}, "key_phrases": [], "feedback": []}
+            threading.Thread(target=transcribe_real_time, daemon=True).start()
 with col2:
     if st.button("Stop Analysis"):
         st.session_state.running = False
@@ -158,6 +151,11 @@ if st.session_state.results["sentiment"]:
     col1.metric("Positive", f"{st.session_state.results['sentiment'].get('positive', 0):.2f}")
     col2.metric("Negative", f"{st.session_state.results['sentiment'].get('negative', 0):.2f}")
     col3.metric("Neutral", f"{st.session_state.results['sentiment'].get('neutral', 0):.2f}")
+    # Sentiment chart
+    st.write("**Sentiment Distribution**")
+    sentiment_df = pd.DataFrame([st.session_state.results["sentiment"]], index=["Sentiment"])
+    sentiment_df = sentiment_df.rename(columns={"positive": "Positive", "negative": "Negative", "neutral": "Neutral"})
+    st.bar_chart(sentiment_df)
 
 if st.session_state.results["key_phrases"]:
     st.write("**Key Phrases**")
